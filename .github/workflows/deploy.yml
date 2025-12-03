@@ -37,6 +37,7 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
+          NEXT_PUBLIC_BASE_PATH: '/wolf-go-adk'
 
 
       - name: Upload artifact
