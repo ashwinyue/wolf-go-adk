@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
-const isProd = process.env.NODE_ENV === 'production';
+const isGitHubPages = process.env.GITHUB_PAGES === 'true';
 
 const nextConfig: NextConfig = {
-  // 只在生产环境启用静态导出
-  ...(isProd && { output: 'export' }),
-  basePath: isProd ? '/wolf-go' : '',
-  assetPrefix: isProd ? '/wolf-go/' : '',
+  // 只在 GitHub Pages 启用静态导出
+  ...(isGitHubPages && { output: 'export' }),
+  basePath: isGitHubPages ? '/wolf-go-adk' : '',
+  assetPrefix: isGitHubPages ? '/wolf-go-adk/' : '',
   images: {
     unoptimized: true,
   },

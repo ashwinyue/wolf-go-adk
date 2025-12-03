@@ -122,7 +122,7 @@ npm run dev
 
 ## 🎬 在线演示
 
-GitHub Pages: https://ashwinyue.github.io/wolf-go/
+GitHub Pages: https://ashwinyue.github.io/wolf-go-adk/
 
 ## 📊 与 werewolves-go 版本对比
 
