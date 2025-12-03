@@ -19,18 +19,16 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
 
-  // 加载游戏列表 - 支持 API 和静态文件两种模式
+  // 加载游戏列表
   useEffect(() => {
     async function loadGames() {
       try {
-        // 优先尝试 API（开发模式）
-        let res = await fetch('/api/games');
-        if (!res.ok) {
-          // 回退到静态文件（生产模式）
-          res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/data/games.json`);
+        const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        const res = await fetch(`${basePath}/data/games.json`);
+        if (res.ok) {
+          const data = await res.json();
+          setGames(data.games || []);
         }
-        const data = await res.json();
-        setGames(data.games || []);
       } catch (error) {
         console.error('Failed to load games:', error);
       } finally {
@@ -53,7 +51,8 @@ export default function Home() {
     // 否则从静态文件加载
     setLoadingContent(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/data/${game.id}.json`);
+      const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+      const res = await fetch(`${basePath}/data/${game.id}.json`);
       const data = await res.json();
       setGameContent(data.content || '');
     } catch (error) {
