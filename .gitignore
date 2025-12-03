@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build outputs
+web/.next/
+web/out/
+web/public/data/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs - 保留日志文件用于演示
+# logs/*
+# !logs/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Debug
+*.log
+game_output.log
