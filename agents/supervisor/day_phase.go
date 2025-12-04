@@ -215,6 +215,10 @@ func (m *ModeratorAgent) lastWords(ctx context.Context, gen *adk.AsyncGenerator[
 		// 遗言广播给所有人
 		m.broadcastToAll(fmt.Sprintf("[%s 遗言]: %s", player, response))
 		m.logger.LogLastWords(player, response)
+
+		// 存储遗言到 RAG
+		m.storeEpisodeToRAG(ctx, memory.EpisodeLastWords, player, "",
+			fmt.Sprintf("%s 的遗言: %s", player, response))
 	}
 }
 

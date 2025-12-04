@@ -34,6 +34,7 @@ const (
 	EpisodeCheck      EpisodeType = "check"      // 查验
 	EpisodeDeath      EpisodeType = "death"      // 死亡
 	EpisodeAccusation EpisodeType = "accusation" // 指控
+	EpisodeLastWords  EpisodeType = "last_words" // 遗言
 )
 
 // Episode 游戏事件
