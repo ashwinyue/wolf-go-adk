@@ -24,10 +24,10 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/game"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/params"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/tools"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/utils"
+	"github.com/ashwinyue/wolf-go-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/params"
+	"github.com/ashwinyue/wolf-go-adk/tools"
+	"github.com/ashwinyue/wolf-go-adk/utils"
 )
 
 // NewWitchAgent 创建女巫 Agent

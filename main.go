@@ -27,10 +27,10 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 
+	"github.com/ashwinyue/wolf-go-adk/agents/supervisor"
+	"github.com/ashwinyue/wolf-go-adk/params"
 	"github.com/cloudwego/eino-examples/adk/common/prints"
 	"github.com/cloudwego/eino-examples/adk/common/trace"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/agents/supervisor"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/params"
 )
 
 func main() {

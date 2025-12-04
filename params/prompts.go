@@ -19,7 +19,7 @@ package params
 import (
 	"fmt"
 
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/game"
 )
 
 // PromptsTemplate 游戏提示词模板

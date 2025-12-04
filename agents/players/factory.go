@@ -22,7 +22,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/game"
 )
 
 // CreatePlayerAgents 创建所有玩家 Agent

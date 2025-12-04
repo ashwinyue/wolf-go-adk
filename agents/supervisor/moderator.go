@@ -26,9 +26,9 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/agents/players"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/game"
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/params"
+	"github.com/ashwinyue/wolf-go-adk/agents/players"
+	"github.com/ashwinyue/wolf-go-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/params"
 )
 
 // ModeratorAgent 主持人 Agent（自定义实现 adk.Agent 接口）

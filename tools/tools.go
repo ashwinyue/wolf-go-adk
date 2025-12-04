@@ -23,7 +23,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 
-	"github.com/cloudwego/eino-examples/week11-homework/werewolves-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/game"
 )
 
 // ========== 狼人工具 ==========
