@@ -116,6 +116,13 @@ func (m *ModeratorAgent) discussPhase(ctx context.Context, gen *adk.AsyncGenerat
 			// 存储发言到 RAG
 			m.storeEpisodeToRAG(ctx, memory.EpisodeSpeech, player, "", response)
 
+			// 检测并存储怀疑关系
+			accused := memory.DetectAccusations(player, response, speakingOrder)
+			for _, target := range accused {
+				m.storeEpisodeToRAG(ctx, memory.EpisodeAccusation, player, target,
+					fmt.Sprintf("%s 怀疑 %s", player, target))
+			}
+
 			m.sendMessage(gen, fmt.Sprintf("  [%s]: %s", player, utils.Truncate(response, 500)))
 			// 广播给所有人
 			m.broadcastToAll(fmt.Sprintf("[%s]: %s", player, response))
@@ -398,40 +405,74 @@ func extractJSON(s string) string {
 	return s
 }
 
-// augmentQueryWithRAG 使用 RAG 增强查询
+// augmentQueryWithRAG 使用 RAG（语义记忆）和短期记忆（情景记忆）增强查询
 func (m *ModeratorAgent) augmentQueryWithRAG(ctx context.Context, baseQuery, playerName, phase string) string {
-	if m.rag == nil {
+	var allEpisodes []*memory.Episode
+
+	// 1. 从短期情景记忆获取最近事件（始终可用）
+	if m.shortMem != nil {
+		// 获取当前轮次的事件
+		roundEvents := m.shortMem.GetByRound(m.state.Round)
+		allEpisodes = append(allEpisodes, roundEvents...)
+
+		// 获取针对该玩家的怀疑
+		if accusers := m.shortMem.GetAccusers(playerName); len(accusers) > 0 {
+			// 添加提示：有人怀疑你
+			for _, accuser := range accusers {
+				allEpisodes = append(allEpisodes, &memory.Episode{
+					Type:    memory.EpisodeAccusation,
+					Actor:   accuser,
+					Target:  playerName,
+					Content: fmt.Sprintf("%s 怀疑你", accuser),
+					Round:   m.state.Round,
+				})
+			}
+		}
+	}
+
+	// 2. 从 RAG 语义记忆检索相关事件（如果可用）
+	if m.rag != nil {
+		// 构建检索查询
+		searchQuery := memory.BuildQueryFromContext(playerName, phase, m.state.Round)
+
+		// 检索相关记忆
+		episodes, err := m.rag.RetrieveRelevant(ctx, searchQuery, &memory.RetrieveConfig{
+			TopK:     5,
+			GameID:   m.logger.GetGameID(),
+			MaxRound: m.state.Round,
+		})
+		if err == nil && len(episodes) > 0 {
+			allEpisodes = append(allEpisodes, episodes...)
+		}
+	}
+
+	// 如果没有任何记忆，返回原始查询
+	if len(allEpisodes) == 0 {
 		return baseQuery
 	}
 
-	// 构建检索查询
-	searchQuery := memory.BuildQueryFromContext(playerName, phase, m.state.Round)
-
-	// 检索相关记忆
-	episodes, err := m.rag.RetrieveRelevant(ctx, searchQuery, &memory.RetrieveConfig{
-		TopK:     5,
-		GameID:   m.logger.GetGameID(),
-		MaxRound: m.state.Round,
-	})
-	if err != nil || len(episodes) == 0 {
-		return baseQuery
+	// 去重（基于内容）
+	seen := make(map[string]bool)
+	var uniqueEpisodes []*memory.Episode
+	for _, ep := range allEpisodes {
+		key := fmt.Sprintf("%s-%s-%s", ep.Type, ep.Actor, ep.Content)
+		if !seen[key] {
+			seen[key] = true
+			uniqueEpisodes = append(uniqueEpisodes, ep)
+		}
 	}
 
 	// 构建增强 Prompt
 	memCtx := &memory.MemoryContext{
-		RelevantEpisodes: episodes,
+		RelevantEpisodes: uniqueEpisodes,
 		CurrentRound:     m.state.Round,
 		PlayerName:       playerName,
 	}
 	return memory.BuildAugmentedPrompt(baseQuery, memCtx)
 }
 
-// storeEpisodeToRAG 存储事件到 RAG
+// storeEpisodeToRAG 存储事件到 RAG（语义记忆）和短期记忆（情景记忆）
 func (m *ModeratorAgent) storeEpisodeToRAG(ctx context.Context, episodeType memory.EpisodeType, actor, target, content string) {
-	if m.rag == nil {
-		return
-	}
-
 	episode := memory.NewEpisode(
 		m.logger.GetGameID(),
 		m.state.Round,
@@ -442,9 +483,17 @@ func (m *ModeratorAgent) storeEpisodeToRAG(ctx context.Context, episodeType memo
 		content,
 	)
 
-	if err := m.rag.StoreEpisode(ctx, episode); err != nil {
-		// 存储失败不影响游戏，只记录警告
-		fmt.Printf("⚠️ 存储事件到 RAG 失败: %v\n", err)
+	// 存储到短期情景记忆（始终执行）
+	if m.shortMem != nil {
+		m.shortMem.Add(episode)
+	}
+
+	// 存储到 RAG 语义记忆（如果可用）
+	if m.rag != nil {
+		if err := m.rag.StoreEpisode(ctx, episode); err != nil {
+			// 存储失败不影响游戏，只记录警告
+			fmt.Printf("⚠️ 存储事件到 RAG 失败: %v\n", err)
+		}
 	}
 }
 

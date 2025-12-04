@@ -39,7 +39,8 @@ type ModeratorAgent struct {
 	logger       *game.GameLogger
 	playerAgents map[string]adk.Agent
 	playerMsgs   map[string][]*schema.Message // 玩家消息历史
-	rag          *memory.RAGSystem            // RAG 系统
+	rag          *memory.RAGSystem            // RAG 系统（语义记忆）
+	shortMem     *memory.ShortTermMemory      // 短期情景记忆
 	mu           sync.RWMutex
 }
 
@@ -140,12 +141,16 @@ func NewModeratorAgentWithHuman(ctx context.Context, humanPlayer string) (*Moder
 		}
 	}
 
+	// 初始化短期情景记忆
+	shortMem := memory.NewShortTermMemory(100)
+
 	return &ModeratorAgent{
 		state:        state,
 		logger:       logger,
 		playerAgents: playerAgents,
 		playerMsgs:   playerMsgs,
 		rag:          rag,
+		shortMem:     shortMem,
 	}, nil
 }
 

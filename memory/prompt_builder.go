@@ -40,21 +40,27 @@ func BuildAugmentedPrompt(basePrompt string, memCtx *MemoryContext) string {
 	sb.WriteString("以下是与当前局势相关的历史信息，请参考这些信息做出判断：\n\n")
 
 	// 按类型分组（重要事件优先）
-	var keyEvents []*Episode // 关键事件：查验、死亡、救人、毒杀
-	var speeches []*Episode  // 发言
-	var votes []*Episode     // 投票
+	var keyEvents []*Episode   // 关键事件：查验、死亡、救人、毒杀、猎人开枪
+	var accusations []*Episode // 怀疑关系
+	var speeches []*Episode    // 发言
+	var votes []*Episode       // 投票
+	var lastWords []*Episode   // 遗言
 
 	for _, ep := range memCtx.RelevantEpisodes {
 		if ep.Round > memCtx.CurrentRound {
 			continue
 		}
 		switch ep.Type {
-		case EpisodeCheck, EpisodeDeath, EpisodeSave, EpisodePoison, EpisodeKill:
+		case EpisodeCheck, EpisodeDeath, EpisodeSave, EpisodePoison, EpisodeKill, EpisodeHunterShoot:
 			keyEvents = append(keyEvents, ep)
+		case EpisodeAccusation:
+			accusations = append(accusations, ep)
 		case EpisodeSpeech:
 			speeches = append(speeches, ep)
 		case EpisodeVote:
 			votes = append(votes, ep)
+		case EpisodeLastWords:
+			lastWords = append(lastWords, ep)
 		default:
 			speeches = append(speeches, ep)
 		}
@@ -64,6 +70,24 @@ func BuildAugmentedPrompt(basePrompt string, memCtx *MemoryContext) string {
 	if len(keyEvents) > 0 {
 		sb.WriteString("### 🔑 关键事件\n")
 		for _, ep := range keyEvents {
+			sb.WriteString(formatEpisode(ep))
+		}
+		sb.WriteString("\n")
+	}
+
+	// 输出怀疑关系（重要：帮助玩家了解谁在怀疑谁）
+	if len(accusations) > 0 {
+		sb.WriteString("### ⚠️ 怀疑关系\n")
+		for _, ep := range accusations {
+			sb.WriteString(formatEpisode(ep))
+		}
+		sb.WriteString("\n")
+	}
+
+	// 输出遗言（可能包含重要信息）
+	if len(lastWords) > 0 {
+		sb.WriteString("### 🪦 遗言\n")
+		for _, ep := range lastWords {
 			sb.WriteString(formatEpisode(ep))
 		}
 		sb.WriteString("\n")
@@ -105,7 +129,7 @@ func formatEpisode(ep *Episode) string {
 	case EpisodeVote:
 		return fmt.Sprintf("- 🗳️ [%s] 投票给 [%s]\n", ep.Actor, ep.Target)
 	case EpisodeAccusation:
-		return fmt.Sprintf("- ⚠️ [%s] 指控 [%s]: \"%s\"\n", ep.Actor, ep.Target, truncateContent(ep.Content, 100))
+		return fmt.Sprintf("- ⚠️ [%s] 怀疑 [%s]\n", ep.Actor, ep.Target)
 	case EpisodeDeath:
 		return fmt.Sprintf("- 💀 [%s] 死亡\n", ep.Actor)
 	case EpisodeCheck:
@@ -116,6 +140,10 @@ func formatEpisode(ep *Episode) string {
 		return fmt.Sprintf("- 💊 [%s] 被救活\n", ep.Target)
 	case EpisodePoison:
 		return fmt.Sprintf("- ☠️ [%s] 被毒杀\n", ep.Target)
+	case EpisodeLastWords:
+		return fmt.Sprintf("- 🪦 [%s] 遗言: \"%s\"\n", ep.Actor, truncateContent(ep.Content, 150))
+	case EpisodeHunterShoot:
+		return fmt.Sprintf("- 🔫 猎人 [%s] 射杀了 [%s]\n", ep.Actor, ep.Target)
 	default:
 		return fmt.Sprintf("- [%s] %s\n", ep.Actor, ep.Content)
 	}
