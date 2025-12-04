@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -34,6 +35,10 @@ import (
 )
 
 func main() {
+	// 命令行参数
+	humanPlayer := flag.String("human", "", "人类玩家名字 (Player1-Player9)，为空则全部 AI")
+	flag.Parse()
+
 	// 加载环境变量
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
@@ -52,8 +57,15 @@ func main() {
 	defer traceCloseFn(ctx)
 
 	// 创建主持人 Agent（Supervisor 模式）
-	// 这是一个自定义 Agent，作为 Supervisor 编排所有玩家 Agent
-	moderator, err := supervisor.NewModeratorAgent(ctx)
+	var moderator *supervisor.ModeratorAgent
+	var err error
+	if *humanPlayer != "" {
+		fmt.Printf("🎮 人类玩家模式: %s\n", *humanPlayer)
+		moderator, err = supervisor.NewModeratorAgentWithHuman(ctx, *humanPlayer)
+	} else {
+		fmt.Println("🤖 全 AI 模式")
+		moderator, err = supervisor.NewModeratorAgent(ctx)
+	}
 	if err != nil {
 		log.Fatalf("创建主持人 Agent 失败: %v", err)
 	}

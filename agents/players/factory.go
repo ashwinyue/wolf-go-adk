@@ -27,13 +27,22 @@ import (
 
 // CreatePlayerAgents 创建所有玩家 Agent
 // 每个玩家都是独立的 ChatModelAgent，有自己的 ReAct 循环
-func CreatePlayerAgents(ctx context.Context, state *game.GameState) (map[string]adk.Agent, error) {
+// humanPlayer 指定人类玩家的名字，为空则全部为 AI
+func CreatePlayerAgents(ctx context.Context, state *game.GameState, humanPlayer string) (map[string]adk.Agent, error) {
 	playerAgents := make(map[string]adk.Agent)
 
 	for name, player := range state.Players {
 		var agent adk.Agent
 		var err error
 
+		// 如果是人类玩家，创建 HumanAgent
+		if name == humanPlayer {
+			agent = NewHumanAgent(name, player.Role)
+			playerAgents[name] = agent
+			continue
+		}
+
+		// AI 玩家
 		switch player.Role {
 		case game.RoleWerewolf:
 			agent, err = NewWerewolfAgent(ctx, name, state)
@@ -57,4 +66,9 @@ func CreatePlayerAgents(ctx context.Context, state *game.GameState) (map[string]
 	}
 
 	return playerAgents, nil
+}
+
+// CreatePlayerAgentsAllAI 创建所有 AI 玩家 Agent（向后兼容）
+func CreatePlayerAgentsAllAI(ctx context.Context, state *game.GameState) (map[string]adk.Agent, error) {
+	return CreatePlayerAgents(ctx, state, "")
 }

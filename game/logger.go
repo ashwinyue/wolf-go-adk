@@ -43,6 +43,13 @@ func NewGameLogger() *GameLogger {
 	}
 }
 
+// GetGameID 获取游戏 ID
+func (gl *GameLogger) GetGameID() string {
+	gl.mu.Lock()
+	defer gl.mu.Unlock()
+	return gl.gameID
+}
+
 // SetPlayers 设置玩家信息
 func (gl *GameLogger) SetPlayers(players map[string]Role) {
 	gl.mu.Lock()

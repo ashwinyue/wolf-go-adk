@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"strings"
 	"sync"
 
@@ -28,6 +29,7 @@ import (
 
 	"github.com/ashwinyue/wolf-go-adk/agents/players"
 	"github.com/ashwinyue/wolf-go-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/memory"
 	"github.com/ashwinyue/wolf-go-adk/params"
 )
 
@@ -37,11 +39,18 @@ type ModeratorAgent struct {
 	logger       *game.GameLogger
 	playerAgents map[string]adk.Agent
 	playerMsgs   map[string][]*schema.Message // 玩家消息历史
+	rag          *memory.RAGSystem            // RAG 系统
 	mu           sync.RWMutex
 }
 
-// NewModeratorAgent 创建主持人 Agent
+// NewModeratorAgent 创建主持人 Agent（全 AI 模式）
 func NewModeratorAgent(ctx context.Context) (*ModeratorAgent, error) {
+	return NewModeratorAgentWithHuman(ctx, "")
+}
+
+// NewModeratorAgentWithHuman 创建主持人 Agent，支持人类玩家
+// humanPlayer 指定人类玩家的名字，为空则全部为 AI
+func NewModeratorAgentWithHuman(ctx context.Context, humanPlayer string) (*ModeratorAgent, error) {
 	state := game.NewGameState()
 	logger := game.NewGameLogger()
 
@@ -50,6 +59,20 @@ func NewModeratorAgent(ctx context.Context) (*ModeratorAgent, error) {
 		"Player1", "Player2", "Player3",
 		"Player4", "Player5", "Player6",
 		"Player7", "Player8", "Player9",
+	}
+
+	// 验证人类玩家名字
+	if humanPlayer != "" {
+		valid := false
+		for _, name := range playerNames {
+			if name == humanPlayer {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("无效的玩家名: %s，可选: %v", humanPlayer, playerNames)
+		}
 	}
 
 	// 角色分配：3狼人 + 3村民 + 1预言家 + 1女巫 + 1猎人
@@ -74,9 +97,15 @@ func NewModeratorAgent(ctx context.Context) (*ModeratorAgent, error) {
 	logger.SetPlayers(playerRoles)
 
 	// 创建玩家 Agent
-	playerAgents, err := players.CreatePlayerAgents(ctx, state)
+	playerAgents, err := players.CreatePlayerAgents(ctx, state, humanPlayer)
 	if err != nil {
 		return nil, fmt.Errorf("创建玩家 Agent 失败: %w", err)
+	}
+
+	// 如果有人类玩家，显示其角色
+	if humanPlayer != "" {
+		role := state.GetPlayerRole(humanPlayer)
+		fmt.Printf("\n🎮 你是 %s，角色是: %s\n\n", humanPlayer, getRoleDisplayName(role))
 	}
 
 	// 初始化玩家消息历史
@@ -87,11 +116,36 @@ func NewModeratorAgent(ctx context.Context) (*ModeratorAgent, error) {
 		}
 	}
 
+	// 初始化 RAG 系统（可选，如果环境变量未配置则跳过）
+	var rag *memory.RAGSystem
+	if milvusAddr := os.Getenv("MILVUS_ADDR"); milvusAddr != "" {
+		arkAPIKey := os.Getenv("ARK_API_KEY")
+		arkModel := os.Getenv("ARK_MODEL")
+		if arkAPIKey != "" && arkModel != "" {
+			ragConfig := &memory.RAGConfig{
+				MilvusAddr: milvusAddr,
+				ArkAPIKey:  arkAPIKey,
+				ArkModel:   arkModel,
+			}
+			rag, err = memory.NewRAGSystem(ctx, ragConfig)
+			if err != nil {
+				// RAG 初始化失败不影响游戏运行，只记录警告
+				fmt.Printf("⚠️ RAG 系统初始化失败: %v\n", err)
+				rag = nil
+			} else {
+				// 设置游戏 ID
+				rag.SetGameID(logger.GetGameID())
+				fmt.Println("✅ RAG 系统初始化成功")
+			}
+		}
+	}
+
 	return &ModeratorAgent{
 		state:        state,
 		logger:       logger,
 		playerAgents: playerAgents,
 		playerMsgs:   playerMsgs,
+		rag:          rag,
 	}, nil
 }
 
@@ -226,4 +280,35 @@ func getRoleName(role game.Role) string {
 	default:
 		return string(role)
 	}
+}
+
+// getRoleDisplayName 获取角色显示名称（带 emoji）
+func getRoleDisplayName(role game.Role) string {
+	switch role {
+	case game.RoleWerewolf:
+		return "🐺 狼人"
+	case game.RoleVillager:
+		return "👨‍🌾 村民"
+	case game.RoleSeer:
+		return "🔮 预言家"
+	case game.RoleWitch:
+		return "🧙‍♀️ 女巫"
+	case game.RoleHunter:
+		return "🏹 猎人"
+	default:
+		return string(role)
+	}
+}
+
+// Close 关闭资源
+func (m *ModeratorAgent) Close() error {
+	if m.rag != nil {
+		return m.rag.Close()
+	}
+	return nil
+}
+
+// GetRAG 获取 RAG 系统（用于外部访问）
+func (m *ModeratorAgent) GetRAG() *memory.RAGSystem {
+	return m.rag
 }

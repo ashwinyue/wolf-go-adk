@@ -38,3 +38,5 @@ Thumbs.db
 # Debug
 *.log
 game_output.log
+volumes/
+logs/

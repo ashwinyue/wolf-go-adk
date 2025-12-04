@@ -18,13 +18,18 @@ package supervisor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
 
+	"github.com/ashwinyue/wolf-go-adk/agents/players"
 	"github.com/ashwinyue/wolf-go-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/memory"
 	"github.com/ashwinyue/wolf-go-adk/params"
 	"github.com/ashwinyue/wolf-go-adk/tools"
 	"github.com/ashwinyue/wolf-go-adk/utils"
@@ -92,16 +97,26 @@ func (m *ModeratorAgent) discussPhase(ctx context.Context, gen *adk.AsyncGenerat
 	m.logger.LogPhase("💬 讨论阶段")
 	m.logger.LogModerator("现在进入讨论阶段，请各位玩家依次发言。")
 
+	// 主持人决定发言顺序
+	speakingOrder := m.decideSpeakingOrder(ctx, alivePlayers)
+	m.sendMessage(gen, fmt.Sprintf("  📢 发言顺序: %s", strings.Join(speakingOrder, " → ")))
+	m.logger.LogModerator(fmt.Sprintf("发言顺序: %s", strings.Join(speakingOrder, " → ")))
 	// 广播讨论开始
-	discussMsg := fmt.Sprintf(params.Prompts.ToAllDiscuss, strings.Join(alivePlayers, ", "), strings.Join(alivePlayers, ", "))
+	discussMsg := fmt.Sprintf(params.Prompts.ToAllDiscuss, strings.Join(speakingOrder, ", "), strings.Join(speakingOrder, ", "))
 	m.broadcastToAll(discussMsg)
 
-	for _, player := range alivePlayers {
-		query := "轮到你发言了，请分析局势并表达你的观点。"
+	for _, player := range speakingOrder {
+		baseQuery := "轮到你发言了，请分析局势并表达你的观点。"
 
-		response := m.callPlayer(ctx, player, query)
+		// RAG 检索相关记忆
+		augmentedQuery := m.augmentQueryWithRAG(ctx, baseQuery, player, "day")
+
+		response := m.callPlayer(ctx, player, augmentedQuery)
 		if response != "" {
-			m.sendMessage(gen, fmt.Sprintf("  [%s]: %s", player, utils.Truncate(response, 200)))
+			// 存储发言到 RAG
+			m.storeEpisodeToRAG(ctx, memory.EpisodeSpeech, player, "", response)
+
+			m.sendMessage(gen, fmt.Sprintf("  [%s]: %s", player, utils.Truncate(response, 500)))
 			// 广播给所有人
 			m.broadcastToAll(fmt.Sprintf("[%s]: %s", player, response))
 			m.logger.LogDiscussion(player, response)
@@ -127,11 +142,14 @@ func (m *ModeratorAgent) votePhase(ctx context.Context, gen *adk.AsyncGenerator[
 		go func(p string) {
 			defer wg.Done()
 
-			query := fmt.Sprintf(params.Prompts.ToAllVote, strings.Join(alivePlayers, ", "))
+			baseQuery := fmt.Sprintf(params.Prompts.ToAllVote, strings.Join(alivePlayers, ", "))
+
+			// RAG 增强投票查询
+			augmentedQuery := m.augmentQueryWithRAG(ctx, baseQuery, p, "day")
 
 			var target string
 			if voteTool != nil {
-				result, err := m.callPlayerWithTool(ctx, p, query, voteTool)
+				result, err := m.callPlayerWithTool(ctx, p, augmentedQuery, voteTool)
 				if err == nil {
 					if t, ok := result["target"].(string); ok {
 						target = t
@@ -143,6 +161,10 @@ func (m *ModeratorAgent) votePhase(ctx context.Context, gen *adk.AsyncGenerator[
 				mu.Lock()
 				votes[p] = target
 				m.logger.LogVote(p, target)
+
+				// 存储投票到 RAG
+				m.storeEpisodeToRAG(ctx, memory.EpisodeVote, p, target, fmt.Sprintf("%s 投票给 %s", p, target))
+
 				mu.Unlock()
 				m.sendMessage(gen, fmt.Sprintf("  [%s] 投票: %s", p, target))
 			}
@@ -165,6 +187,9 @@ func (m *ModeratorAgent) votePhase(ctx context.Context, gen *adk.AsyncGenerator[
 
 	if votedOut != "" {
 		role := m.state.GetPlayerRole(votedOut)
+
+		// 存储死亡事件到 RAG
+		m.storeEpisodeToRAG(ctx, memory.EpisodeDeath, votedOut, "", fmt.Sprintf("%s 被投票淘汰，身份是%s", votedOut, role))
 
 		// 遗言
 		m.lastWords(ctx, gen, votedOut)
@@ -218,6 +243,200 @@ func (m *ModeratorAgent) hunterShoot(ctx context.Context, gen *adk.AsyncGenerato
 				}
 			}
 		}
+	}
+}
+
+// SpeakingOrderDecision 发言顺序决策
+type SpeakingOrderDecision struct {
+	Start     string `json:"start"`     // 起始玩家
+	Direction string `json:"direction"` // clockwise 或 counterclockwise
+	Reason    string `json:"reason"`    // 决策原因
+}
+
+// decideSpeakingOrder 主持人决定发言顺序
+func (m *ModeratorAgent) decideSpeakingOrder(ctx context.Context, alivePlayers []string) []string {
+	if len(alivePlayers) <= 1 {
+		return alivePlayers
+	}
+
+	// 构建上下文信息
+	var contextInfo strings.Builder
+	contextInfo.WriteString(fmt.Sprintf("当前回合: %d\n", m.state.Round))
+
+	// 上轮死亡信息
+	var lastDead []string
+	if m.state.NightKilled != "" && !m.state.NightSaved {
+		lastDead = append(lastDead, m.state.NightKilled)
+	}
+	if m.state.NightPoisoned != "" {
+		lastDead = append(lastDead, m.state.NightPoisoned)
+	}
+	if len(lastDead) > 0 {
+		contextInfo.WriteString(fmt.Sprintf("昨晚死亡: %s\n", strings.Join(lastDead, ", ")))
+	} else {
+		contextInfo.WriteString("昨晚是平安夜\n")
+	}
+
+	// 构建 prompt
+	prompt := fmt.Sprintf(`你是狼人杀主持人，需要决定本轮发言顺序。
+
+存活玩家（按座位顺序）: %s
+%s
+请决定发言顺序，输出 JSON 格式:
+{
+  "start": "从哪个玩家开始发言",
+  "direction": "clockwise 或 counterclockwise",
+  "reason": "简短说明决策原因"
+}
+
+注意：
+- start 必须是存活玩家之一
+- 可以考虑从死者旁边的玩家开始
+- 第一轮可以随机选择`,
+		strings.Join(alivePlayers, ", "),
+		contextInfo.String(),
+	)
+
+	// 调用 LLM 决定顺序
+	decision := m.callModeratorLLM(ctx, prompt)
+
+	// 解析决策
+	var order SpeakingOrderDecision
+	if err := json.Unmarshal([]byte(decision), &order); err != nil {
+		// 解析失败，使用默认顺序
+		return alivePlayers
+	}
+
+	// 验证起始玩家
+	startIdx := -1
+	for i, p := range alivePlayers {
+		if p == order.Start {
+			startIdx = i
+			break
+		}
+	}
+	if startIdx == -1 {
+		// 起始玩家无效，随机选择
+		startIdx = rand.Intn(len(alivePlayers))
+	}
+
+	// 生成发言顺序
+	result := make([]string, len(alivePlayers))
+	for i := 0; i < len(alivePlayers); i++ {
+		if order.Direction == "counterclockwise" {
+			result[i] = alivePlayers[(startIdx-i+len(alivePlayers))%len(alivePlayers)]
+		} else {
+			// 默认顺时针
+			result[i] = alivePlayers[(startIdx+i)%len(alivePlayers)]
+		}
+	}
+
+	return result
+}
+
+// callModeratorLLM 调用主持人 LLM（用于决策，不是玩家对话）
+func (m *ModeratorAgent) callModeratorLLM(ctx context.Context, prompt string) string {
+	// 找一个 AI Agent 来调用 LLM（避免使用人类玩家）
+	var agent adk.Agent
+	for _, a := range m.playerAgents {
+		// 检查是否是人类玩家（通过类型断言）
+		if _, isHuman := a.(*players.HumanAgent); !isHuman {
+			agent = a
+			break
+		}
+	}
+	if agent == nil {
+		return "{}"
+	}
+
+	msgs := []*schema.Message{
+		{Role: schema.System, Content: "你是狼人杀游戏主持人，负责公正地主持游戏。请严格按照要求的 JSON 格式输出。"},
+		{Role: schema.User, Content: prompt},
+	}
+
+	iter := agent.Run(ctx, &adk.AgentInput{
+		Messages: msgs,
+	})
+
+	var response string
+	for {
+		event, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if event.Err != nil {
+			continue
+		}
+		if event.Output != nil && event.Output.MessageOutput != nil {
+			if msg := event.Output.MessageOutput.Message; msg != nil && msg.Content != "" {
+				response = msg.Content
+			}
+		}
+	}
+
+	// 尝试提取 JSON
+	response = extractJSON(response)
+	return response
+}
+
+// extractJSON 从响应中提取 JSON
+func extractJSON(s string) string {
+	// 查找 { 和 } 的位置
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start != -1 && end != -1 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
+// augmentQueryWithRAG 使用 RAG 增强查询
+func (m *ModeratorAgent) augmentQueryWithRAG(ctx context.Context, baseQuery, playerName, phase string) string {
+	if m.rag == nil {
+		return baseQuery
+	}
+
+	// 构建检索查询
+	searchQuery := memory.BuildQueryFromContext(playerName, phase, m.state.Round)
+
+	// 检索相关记忆
+	episodes, err := m.rag.RetrieveRelevant(ctx, searchQuery, &memory.RetrieveConfig{
+		TopK:     5,
+		GameID:   m.logger.GetGameID(),
+		MaxRound: m.state.Round,
+	})
+	if err != nil || len(episodes) == 0 {
+		return baseQuery
+	}
+
+	// 构建增强 Prompt
+	memCtx := &memory.MemoryContext{
+		RelevantEpisodes: episodes,
+		CurrentRound:     m.state.Round,
+		PlayerName:       playerName,
+	}
+	return memory.BuildAugmentedPrompt(baseQuery, memCtx)
+}
+
+// storeEpisodeToRAG 存储事件到 RAG
+func (m *ModeratorAgent) storeEpisodeToRAG(ctx context.Context, episodeType memory.EpisodeType, actor, target, content string) {
+	if m.rag == nil {
+		return
+	}
+
+	episode := memory.NewEpisode(
+		m.logger.GetGameID(),
+		m.state.Round,
+		m.state.Phase,
+		episodeType,
+		actor,
+		target,
+		content,
+	)
+
+	if err := m.rag.StoreEpisode(ctx, episode); err != nil {
+		// 存储失败不影响游戏，只记录警告
+		fmt.Printf("⚠️ 存储事件到 RAG 失败: %v\n", err)
 	}
 }
 

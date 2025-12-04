@@ -27,6 +27,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/ashwinyue/wolf-go-adk/game"
+	"github.com/ashwinyue/wolf-go-adk/memory"
 	"github.com/ashwinyue/wolf-go-adk/params"
 	"github.com/ashwinyue/wolf-go-adk/tools"
 	"github.com/ashwinyue/wolf-go-adk/utils"
@@ -176,6 +177,10 @@ func (m *ModeratorAgent) werewolfAction(ctx context.Context, gen *adk.AsyncGener
 		m.broadcastToWerewolves(fmt.Sprintf(params.Prompts.ToWolvesRes, details, killed))
 		m.sendMessage(gen, fmt.Sprintf("  ➡️ 狼人决定杀: %s (%s)", killed, details))
 		m.logger.LogWerewolfVote(killed, details)
+
+		// 存储狼人击杀到 RAG
+		m.storeEpisodeToRAG(ctx, memory.EpisodeKill, strings.Join(wolves, ","), killed,
+			fmt.Sprintf("狼人选择击杀 %s", killed))
 	}
 }
 
@@ -206,6 +211,10 @@ func (m *ModeratorAgent) witchAction(ctx context.Context, gen *adk.AsyncGenerato
 					m.broadcastToAll(params.Prompts.ToWitchResurrectYes)
 					m.sendMessage(gen, fmt.Sprintf("  ➡️ 女巫救了 %s！", killed))
 					m.logger.LogWitchSave(killed)
+
+					// 存储女巫救人到 RAG
+					m.storeEpisodeToRAG(ctx, memory.EpisodeSave, witch, killed,
+						fmt.Sprintf("女巫使用解药救了 %s", killed))
 				} else {
 					m.broadcastToAll(params.Prompts.ToWitchResurrectNo)
 				}
@@ -226,6 +235,10 @@ func (m *ModeratorAgent) witchAction(ctx context.Context, gen *adk.AsyncGenerato
 						m.state.SetNightPoisoned(target) // 内部会设置 PoisonPotion = false
 						m.sendMessage(gen, fmt.Sprintf("  ➡️ 女巫毒了 %s！", target))
 						m.logger.LogWitchPoison(target)
+
+						// 存储女巫毒人到 RAG
+						m.storeEpisodeToRAG(ctx, memory.EpisodePoison, witch, target,
+							fmt.Sprintf("女巫使用毒药毒杀 %s", target))
 					}
 				}
 			}
@@ -265,6 +278,14 @@ func (m *ModeratorAgent) seerAction(ctx context.Context, gen *adk.AsyncGenerator
 		m.addToPlayerHistory(seer, schema.User, resultMsg)
 		m.sendMessage(gen, fmt.Sprintf("  ➡️ 预言家查验 %s: %s", target, result))
 		m.logger.LogSeerCheck(target, result)
+
+		// 存储预言家查验到 RAG（重要信息！）
+		isWolf := "好人"
+		if player.Role == game.RoleWerewolf {
+			isWolf = "狼人"
+		}
+		m.storeEpisodeToRAG(ctx, memory.EpisodeCheck, seer, target,
+			fmt.Sprintf("预言家查验 %s 的身份是 %s", target, isWolf))
 	}
 }
 
@@ -359,6 +380,7 @@ func (m *ModeratorAgent) callPlayer(ctx context.Context, playerName, promptText 
 	})
 
 	var response string
+	var responseBuilder strings.Builder
 	for {
 		event, ok := iter.Next()
 		if !ok {
@@ -371,9 +393,19 @@ func (m *ModeratorAgent) callPlayer(ctx context.Context, playerName, promptText 
 		}
 		if event.Output != nil && event.Output.MessageOutput != nil {
 			if msg := event.Output.MessageOutput.Message; msg != nil && msg.Content != "" {
-				response = msg.Content
+				// 如果是流式输出，累加内容
+				if event.Output.MessageOutput.IsStreaming {
+					responseBuilder.WriteString(msg.Content)
+				} else {
+					// 非流式输出，直接使用完整内容
+					response = msg.Content
+				}
 			}
 		}
+	}
+	// 如果有流式内容，使用累加的结果
+	if responseBuilder.Len() > 0 {
+		response = responseBuilder.String()
 	}
 
 	// 保存响应到历史
