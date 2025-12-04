@@ -243,6 +243,10 @@ func (m *ModeratorAgent) hunterShoot(ctx context.Context, gen *adk.AsyncGenerato
 					m.broadcastToAll(fmt.Sprintf(params.Prompts.ToAllHunterShoot, target))
 					m.sendMessage(gen, fmt.Sprintf("  🔫 猎人射杀了 %s！", target))
 					m.logger.LogHunterShoot(target)
+
+					// 存储猎人开枪到 RAG
+					m.storeEpisodeToRAG(ctx, memory.EpisodeHunterShoot, hunter, target,
+						fmt.Sprintf("猎人 %s 开枪射杀了 %s", hunter, target))
 					return
 				}
 			}

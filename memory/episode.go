@@ -26,15 +26,16 @@ import (
 type EpisodeType string
 
 const (
-	EpisodeSpeech     EpisodeType = "speech"     // 发言
-	EpisodeVote       EpisodeType = "vote"       // 投票
-	EpisodeKill       EpisodeType = "kill"       // 击杀
-	EpisodeSave       EpisodeType = "save"       // 救人
-	EpisodePoison     EpisodeType = "poison"     // 毒人
-	EpisodeCheck      EpisodeType = "check"      // 查验
-	EpisodeDeath      EpisodeType = "death"      // 死亡
-	EpisodeAccusation EpisodeType = "accusation" // 指控
-	EpisodeLastWords  EpisodeType = "last_words" // 遗言
+	EpisodeSpeech      EpisodeType = "speech"       // 发言
+	EpisodeVote        EpisodeType = "vote"         // 投票
+	EpisodeKill        EpisodeType = "kill"         // 击杀
+	EpisodeSave        EpisodeType = "save"         // 救人
+	EpisodePoison      EpisodeType = "poison"       // 毒人
+	EpisodeCheck       EpisodeType = "check"        // 查验
+	EpisodeDeath       EpisodeType = "death"        // 死亡
+	EpisodeAccusation  EpisodeType = "accusation"   // 指控
+	EpisodeLastWords   EpisodeType = "last_words"   // 遗言
+	EpisodeHunterShoot EpisodeType = "hunter_shoot" // 猎人开枪
 )
 
 // Episode 游戏事件
